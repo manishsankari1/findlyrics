@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Song Lyric Finder</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        /* Simple fade-in animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        /* Custom scrollbar for a better look */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1f2937; /* bg-gray-800 */
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #4b5563; /* bg-gray-600 */
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #6b7280; /* bg-gray-500 */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-2xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">Lyric Finder</h1>
+            <p class="text-gray-400 mt-2">Type a sentence from a song to find its lyrics.</p>
+        </header>
+
+        <main class="bg-gray-800/50 backdrop-blur-sm rounded-2xl shadow-2xl p-6 md:p-8 space-y-6">
+            <!-- Search Form -->
+            <div id="search-form">
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <input type="text" id="searchInput" placeholder="e.g., 'is this the real life'" class="flex-grow bg-gray-700 border border-gray-600 text-white placeholder-gray-400 text-base rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 block w-full p-3 transition duration-300">
+                    <button id="searchButton" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-purple-500 flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        Search
+                    </button>
+                </div>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loader" class="hidden flex justify-center items-center p-8">
+                <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-purple-500"></div>
+            </div>
+
+            <!-- Message/Error Display -->
+            <div id="message" class="text-center text-gray-400 p-4"></div>
+
+            <!-- Results/Lyrics Container -->
+            <div id="content-container">
+                <!-- Song suggestions will be populated here -->
+                <div id="results"></div>
+                <!-- Lyrics will be populated here -->
+                <div id="lyrics-container" class="hidden">
+                    <div class="flex justify-between items-center mb-4">
+                         <h2 id="lyrics-title" class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-300 to-blue-400"></h2>
+                         <button id="backButton" class="text-sm text-purple-400 hover:text-purple-300">&larr; Back to results</button>
+                    </div>
+                    <div id="lyrics" class="bg-gray-900/70 p-6 rounded-lg max-h-[50vh] overflow-y-auto custom-scrollbar whitespace-pre-wrap leading-relaxed text-gray-300"></div>
+                </div>
+            </div>
+        </main>
+        
+
+
+    </div>
+
+    <script>
+        // DOM Element References
+        const searchInput = document.getElementById('searchInput');
+        const searchButton = document.getElementById('searchButton');
+        const loader = document.getElementById('loader');
+        const message = document.getElementById('message');
+        const resultsContainer = document.getElementById('results');
+        const lyricsContainer = document.getElementById('lyrics-container');
+        const lyricsTitle = document.getElementById('lyrics-title');
+        const lyricsDiv = document.getElementById('lyrics');
+        const backButton = document.getElementById('backButton');
+
+        const API_URL = 'https://api.lyrics.ovh';
+
+        // --- Event Listeners ---
+
+        // Listen for click on search button
+        searchButton.addEventListener('click', searchSongs);
+
+        // Listen for Enter key press in the input field
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchSongs();
+            }
+        });
+
+        // Listen for click on back button
+        backButton.addEventListener('click', showResultsView);
+
+        // --- Core Functions ---
+
+        /**
+         * Fetches and displays song suggestions based on user input.
+         */
+        async function searchSongs() {
+            const query = searchInput.value.trim();
+            if (!query) {
+                displayMessage('Please enter a song title or lyrics snippet.');
+                return;
+            }
+
+            // Reset UI and show loader
+            resetUI();
+            loader.classList.remove('hidden');
+
+            try {
+                // Fetch song suggestions
+                const res = await fetch(`${API_URL}/suggest/${query}`);
+                if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+                const data = await res.json();
+
+                loader.classList.add('hidden');
+                
+                if (data.data && data.data.length > 0) {
+                    displayResults(data.data);
+                } else {
+                    displayMessage('No songs found. Try a different search.');
+                }
+            } catch (error) {
+                console.error("Error fetching songs:", error);
+                loader.classList.add('hidden');
+                displayMessage('An error occurred while searching. Please try again later.');
+            }
+        }
+
+        /**
+         * Fetches and displays the lyrics for a selected song.
+         * @param {string} artist - The artist's name.
+         * @param {string} title - The song's title.
+         */
+        async function getLyrics(artist, title) {
+            // Hide results and show loader
+            resultsContainer.classList.add('hidden');
+            loader.classList.remove('hidden');
+            message.textContent = '';
+
+            try {
+                // Fetch lyrics
+                const res = await fetch(`${API_URL}/v1/${artist}/${title}`);
+                if (!res.ok) {
+                    // lyrics.ovh API returns 404 if lyrics aren't found
+                     if (res.status === 404) {
+                        throw new Error('Lyrics for this song are not available.');
+                    } else {
+                        throw new Error(`Server responded with ${res.status}`);
+                    }
+                }
+                const data = await res.json();
+                
+                loader.classList.add('hidden');
+
+                // Display lyrics
+                const formattedLyrics = data.lyrics.replace(/(\r\n|\r|\n)/g, '<br>');
+                lyricsTitle.textContent = `${title} - ${artist}`;
+                lyricsDiv.innerHTML = formattedLyrics || 'No lyrics found for this song.';
+                showLyricsView();
+
+            } catch (error) {
+                console.error("Error fetching lyrics:", error);
+                loader.classList.add('hidden');
+                // Show the error message, but also show the back button to allow navigation
+                lyricsTitle.textContent = 'Error';
+                lyricsDiv.innerHTML = `<p class="text-red-400">${error.message}</p>`;
+                showLyricsView();
+            }
+        }
+
+        // --- UI Helper Functions ---
+        
+        /**
+         * Resets the UI to its initial state before a new search.
+         */
+        function resetUI() {
+            loader.classList.add('hidden');
+            resultsContainer.innerHTML = '';
+            lyricsContainer.classList.add('hidden');
+            message.textContent = '';
+        }
+
+        /**
+         * Displays a message to the user.
+         * @param {string} msg - The message to display.
+         */
+        function displayMessage(msg) {
+            resultsContainer.innerHTML = '';
+            message.textContent = msg;
+        }
+
+        /**
+         * Renders the list of song suggestions.
+         * @param {Array} songs - An array of song objects from the API.
+         */
+        function displayResults(songs) {
+            resultsContainer.innerHTML = `
+                <h2 class="text-xl font-semibold mb-4 text-gray-200">Search Results</h2>
+                <ul class="space-y-3">
+                    ${songs.slice(0, 10).map(song => `
+                        <li class="fade-in bg-gray-700/50 hover:bg-gray-700 p-4 rounded-lg cursor-pointer transition-colors duration-300" 
+                            data-artist="${song.artist.name}" 
+                            data-title="${song.title}">
+                            <div class="font-bold text-lg text-white">${song.title}</div>
+                            <div class="text-sm text-gray-400">by ${song.artist.name}</div>
+                        </li>
+
+
+                    `).join('')}
+                </ul>
+            `;
+            // Add event listener to the results list
+            resultsContainer.addEventListener('click', (e) => {
+                const clickedEl = e.target.closest('li');
+                if (clickedEl) {
+                    const artist = clickedEl.dataset.artist;
+                    const title = clickedEl.dataset.title;
+                    getLyrics(artist, title);
+                }
+            });
+        }
+
+        /**
+         * Hides the lyrics view and shows the results view.
+         */
+        function showResultsView() {
+            lyricsContainer.classList.add('hidden');
+            resultsContainer.classList.remove('hidden');
+        }
+
+        /**
+         * Hides the results view and shows the lyrics view.
+         */
+        function showLyricsView() {
+            resultsContainer.classList.add('hidden');
+            lyricsContainer.classList.remove('hidden');
+        }
+        
+        // Set initial message
+        displayMessage('Ready to find some lyrics?');
+
+    </script>
+</body>
+</html>
